@@ -1,0 +1,14 @@
+{{- if .Values.ttl.create -}}
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ include "agentop-tool.fullname" . }}-ttl-clusterrolebinding
+  namespace: {{ .Release.Namespace }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "agentop-tool.fullname" . }}-ttl-serviceaccount
+  namespace: {{ .Release.Namespace }}
+roleRef:                                                                                                                  kind: ClusterRole
+  name: {{ include "agentop-tool.fullname" . }}-ttl-clusterrole
+  apiGroup: rbac.authorization.k8s.io
+{{- end }} 

@@ -1,0 +1,20 @@
+{{- if .Values.serviceAccount.create -}}
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ include "agentop-management.fullname" . }}-clusterrole
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["pods/status"]                                                                                              verbs: ["patch", "update"]
+- apiGroups: [""]
+  resources: ["pods/binding"]
+  verbs: ["create"]
+- apiGroups: [""]
+  resources: ["pods", "persistentvolumeclaims", "persistentvolumes", "secrets", "configmaps", "services", "namespaces"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]                                                {{- end }}  

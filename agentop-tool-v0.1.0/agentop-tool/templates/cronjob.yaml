@@ -1,0 +1,19 @@
+{{- if .Values.ttl.create -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "agentop-tool.fullname" . }}-ttl
+  labels:
+    {{- include "agentop-tool.labels" . | nindent 4 }}
+spec:
+  schedule: {{ now | dateModify .Values.ttl.schedule | date "04 15 02 01 *" }}
+  jobTemplate:
+    spec:
+      template:
+        spec:                                                                                                                     containers:
+            - name: release-ttl-terminator
+              image: alpine/helm:3.12.0                                                                                               imagePullPolicy: IfNotPresent
+              args: [ 'uninstall', '{{ .Release.Name }}' ]
+          restartPolicy: OnFailure
+          serviceAccountName: {{ include "agentop-tool.fullname" . }}-ttl-serviceaccount
+{{- end }}
