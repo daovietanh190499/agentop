@@ -64,7 +64,10 @@ service:
 ingress:
   enabled: true
   className: ""
-  annotations: {}
+  annotations:
+    kubernetes.io/proxy-body-size: "0"
+    kubernetes.io/proxy-read-timeout: "600"    
+    kubernetes.io/proxy-send-timeout: "600"
     # kubernetes.io/ingress.class: nginx
     # kubernetes.io/tls-acme: "true"
   hosts:
@@ -116,7 +119,7 @@ affinity: {}
 server:
   path: "src/http/*"
   script: 
-    main.py: |-
+    test.py: |-
       from fastapi_app import api_function
 
       @api_function()

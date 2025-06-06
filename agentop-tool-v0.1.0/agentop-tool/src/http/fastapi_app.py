@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.security import APIKeyHeader
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import inspect
@@ -37,7 +38,7 @@ async def health_check():
 
 registered_functions: List[Dict[str, Any]] = []
 
-def api_function():
+def api_function(methods=["POST"], response_type="json", auth=True):
     def decorator(func: Callable):
         func_name = func.__name__
         sig = inspect.signature(func)
@@ -53,23 +54,37 @@ def api_function():
 
         async def endpoint(request: Request, f=func, s=sig):
             try:
-                data = await request.json()
+                if request.method == "POST":
+                    data = await request.json()
+                elif request.method == "GET":
+                    data = dict(request.query_params)
                 logger.info(f"[{f.__name__}] Input: {data}")
                 bound = s.bind(**data)
                 bound.apply_defaults()
                 result = f(*bound.args, **bound.kwargs)
-                return {"result": result}
+                if response_type == "html":
+                    return HTMLResponse(content=result)
+                else:
+                    return {"result": result}
             except Exception as e:
                 logger.error(f"Error in function {f.__name__}: {str(e)}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        app.add_api_route(
-            f"/{func_name}",
-            endpoint=endpoint,
-            methods=["POST"],
-            dependencies=[Depends(verify_api_key)],
-            name=func_name
-        )
+        if auth:
+            app.add_api_route(
+                f"/{func_name}",
+                endpoint=endpoint,
+                methods=methods,
+                dependencies=[Depends(verify_api_key)],
+                name=func_name
+            )
+        else:
+            app.add_api_route(
+                f"/{func_name}",
+                endpoint=endpoint,
+                methods=methods,
+                name=func_name
+            )
 
         return func
     return decorator

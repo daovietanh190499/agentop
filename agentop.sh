@@ -7,7 +7,6 @@ usage() {
   echo "Commands:"
   echo "  create    Create and install a Helm release."
   echo "  list      List all Helm releases."
-  echo "  update    Upgrade an existing Helm release."
   echo "  delete    Uninstall a Helm release."
   echo "  exec      Execute a command in a running pod."
   echo
@@ -18,13 +17,13 @@ usage() {
   echo "  --image-tag <tag>       Docker image tag (default: latest)"
   echo "  --command <cmd>         Command to run inside pod (default: sleep infinity)"
   echo "  --port <port>           POD's port to expose (default: 8000)"
-  echo "  --volumes <volumes>     Persistent volume claims to mount (default: '')"
   echo "  --cpu-requests <value>  CPU requests (default: 1m)"
   echo "  --cpu-limits <value>    CPU limits (default: 1m)"
   echo "  --memory-requests <value> RAM requests (default: 1Gi)"
   echo "  --memory-limits <value>  RAM limits (default: 1Gi)"
-  echo "  --physical-gpu <value>  Number of physical GPUs (default: 1)"
-  echo "  --gpu-memory <value>     Memory request per GPU (default: 8000)"
+  echo "  --server-path <value>    Path to specific server (default: 1Gi)"
+  echo "  --script <value>         Main script of server (default: 1Gi)"
+  echo "  --ttl <value>            Time to live of server (default: forever)"
   echo "  --kubeconfig <value>     Kubernetes config file (default: auto retrieve from $HOME/.kube/config)"
   echo
   echo "Options for delete:"
@@ -42,7 +41,7 @@ usage() {
 # Function to create and install a Helm release
 create() {
   local RELEASE_NAME="my-release"
-  local VERSION="v0.1.0"
+  local VERSION="0.1.0"
   local IMAGE="busybox"
   local IMAGE_TAG="latest"
   local COMMAND="sleep infinity"
@@ -71,7 +70,6 @@ create() {
       --memory-requests) MEMORY_REQUESTS="$2"; shift ;;
       --memory-limits) MEMORY_LIMITS="$2"; shift ;;
       --server-path) SERVER_PATH="$2"; shift ;;
-      --script) SCRIPT="$2"; shift ;;
       --ttl) TTL="$2"; shift ;;
       --kubeconfig) KUBECONFIG="$2"; shift ;;
       *) echo "Unknown option: $1"; usage; exit 1 ;;
@@ -93,23 +91,20 @@ create() {
   [[ -n "$KUBECONFIG" ]] && KUBECONFIG_ARG="--kubeconfig=$KUBECONFIG"
 
   # Helm install command
-  helm upgrade --install "$RELEASE_NAME" agenttop-tool-$VERSION/agentop-tool-$VERSION.tgz \
+  helm upgrade --install "$RELEASE_NAME" agentop-tool-v$VERSION/agentop-tool \
     --namespace "default" \
     --create-namespace \
     $KUBECONFIG_ARG \
     --set image.repository="$IMAGE" \
     --set image.tag="$IMAGE_TAG" \
     --set image.pullPolicy="Always" \
-    --set container.command="$COMMAND" \
+    --set container.args[0]="$COMMAND" \
     --set service.type="NodePort" \
     --set service.port="$PORT" \
     --set ingress.enabled="true" \
     --set ingress.className="nginx" \
     --set ingress.annotations."kubernetes\.io/ingress\.class"="nginx" \
-    --set ingress.annotations."cert-manager\.io/cluster-issuer"="letsencrypt-prod" \
-    --set ingress.annotations."nginx\.ingress\.kubernetes\.io/proxy-body-size"='"0"' \
-    --set ingress.annotations."nginx\.ingress\.kubernetes\.io/proxy-read-timeout"='"600"' \
-    --set ingress.annotations."nginx\.ingress\.kubernetes\.io/proxy-send-timeout"='"600"' \
+    --set ingress.annotations."cert-manager\.io/cluster-issuer"="self-signed" \
     --set ingress.hosts[0].host="$RELEASE_NAME.iai-ailab01" \
     --set ingress.hosts[0].paths[0].path="/" \
     --set ingress.hosts[0].paths[0].pathType="Prefix" \
@@ -121,8 +116,7 @@ create() {
     --set resources.requests.memory="$MEMORY_REQUESTS" \
     --set resources.limits.cpu="$CPU_LIMITS" \
     --set resources.limits.memory="$MEMORY_LIMITS" \
-    --set server.path="$SERVER_PATH" \
-    --set server."main\.py"="$SCRIPT"
+    --set server.path="$SERVER_PATH"
 }
 
 # Function to list Helm releases
@@ -177,7 +171,6 @@ exec_cmd() {
   local KUBECONFIG_ARG=""
 
   # Parse arguments
-B
   while [[ "$#" -gt 0 ]]; do
     case $1 in
       --release-name) RELEASE_NAME="$2"; shift ;;

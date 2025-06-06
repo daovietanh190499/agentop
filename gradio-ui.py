@@ -2,30 +2,43 @@ import gradio as gr
 import subprocess
 import time
 from typing import List
+import os
 
 SERVER_CONFIGS = {
-    "XL": {"cpu_requests": "16", "cpu_limits": "16", "memory_requests": "64Gi", "memory_limits": "64Gi", "physical_gpu": "1", "gpu_memory": "140000"},
-    "L":  {"cpu_requests": "8", "cpu_limits": "8", "memory_requests": "64Gi", "memory_limits": "64Gi", "physical_gpu": "1", "gpu_memory": "90000"},
-    "M":  {"cpu_requests": "8", "cpu_limits": "8", "memory_requests": "32Gi", "memory_limits": "32Gi", "physical_gpu": "1", "gpu_memory": "48000"},
-    "S":  {"cpu_requests": "4", "cpu_limits": "4", "memory_requests": "16Gi",  "memory_limits": "16Gi",  "physical_gpu": "1", "gpu_memory": "24000"}
+    "2XL": {"cpu_requests": "8", "cpu_limits": "8", "memory_requests": "32Gi", "memory_limits": "32Gi"},
+    "XL":  {"cpu_requests": "4", "cpu_limits": "4", "memory_requests": "16Gi", "memory_limits": "16Gi"},
+    "L": {"cpu_requests": "4", "cpu_limits": "4", "memory_requests": "8Gi", "memory_limits": "8Gi"},
+    "M":  {"cpu_requests": "2", "cpu_limits": "2", "memory_requests": "8Gi", "memory_limits": "8Gi"},
+    "S":  {"cpu_requests": "2", "cpu_limits": "2", "memory_requests": "4Gi", "memory_limits": "4Gi"},
+    "XS":  {"cpu_requests": "1", "cpu_limits": "1", "memory_requests": "4Gi",  "memory_limits": "4Gi"},
+    "2XS":  {"cpu_requests": "1", "cpu_limits": "1", "memory_requests": "2Gi",  "memory_limits": "2Gi"}
 }
 
 SERVER_MAPPINGS = {
-        "XL (16 CPU cores, 64Gi RAM, 1 140Gi VRAM GPU)":"XL",
-        "L (8 CPU cores, 64Gi RAM, 1 90Gi VRAM GPU)":"L",
-        "M (8 CPU cores, 32Gi RAM, 1 48Gi VRAM GPU)":"M",
-        "S (4 CPU cores, 16Gi RAM, 1 24Gi VRAM GPU)":"S"
+    "2XL (8 CPU cores, 32Gi RAM)": "2XL",
+    "XL (4 CPU cores, 16Gi RAM)": "XL",
+    "L (4 CPU cores, 8Gi RAM)": "L",
+    "M (2 CPU cores, 8Gi RAM)": "M",
+    "S (2 CPU cores, 4Gi RAM)": "S",
+    "XS (1 CPU cores, 4Gi RAM)": "XS",
+    "2XS (1 CPU cores, 2Gi RAM)": "2XS"
 }
 
 SERVICE_COMMAND = {
-    "diffusion-pipe": "sleep infinity",
-    "comfyui": "/opt/conda/envs/pyenv/bin/python3 main.py --port 8000 --listen 0.0.0.0 & sleep infinity"
+    "http": "uvicorn app:app --host 0.0.0.0 --port 80",
+    "mcp": "python app.py",
+    "agent_http": "uvicorn app:app --host 0.0.0.0 --port 80",
+    "agent_mcp": "python app.py"
 }
 
-SERVICE_VOLUMES = {
-    "diffusion-pipe": "/home/training/diffusion-pipe/data:/diffusion-pipe/data,/home/training/diffusion-pipe/models:/diffusion-pipe/models",
-    "comfyui": "/home/ai/comfy_ui0/input:/comfyui/input,/home/ai/comfy_ui0/output:/comfyui/output,/home/ai/comfy_ui0/models:/comfyui/models"
+SERVER_PATH = {
+    "http": "src/http/",
+    "mcp": "src/mcp/",
+    "agent_http": "src/agent_http/",
+    "agent_mcp": "src/agent_mcp/"
 }
+
+DOCKER_IMAGES = ["fastapi", "mcp", "fastapi-openai", "mcp-openai"]
 
 TTL_LIST = ['1h', '3h', '4h', '6h', '8h', 'forever']
 
@@ -36,37 +49,34 @@ def execute_command(command: List[str]) -> str:
     except subprocess.CalledProcessError as e:
         return f"Error: {e.stderr}"
 
-def create_server(name: str, service: str, size: str, ttl: str, username: str, password: str) -> str:
+def create_server(name: str, service: str, size: str, ttl: str, docker_environment: str, code: str) -> str:
     if size not in SERVER_MAPPINGS:
         return f"Invalid server size: {size}"
-    if service not in SERVICE_VOLUMES:
-        return f"Invalid service: {service}"
+
+    with open(os.path.join("agentop-tool-v0.1.0/agentop-tool", SERVER_PATH[service], "main.py"), "w+") as f:
+        f.write(code)
 
     config = SERVER_CONFIGS[SERVER_MAPPINGS[size]]
     size = SERVER_MAPPINGS[size]
     release_name = f"{name.lower()}-{size.lower()}"
     command = [
-        "aipod.sh", "create",
+        "agentop.sh", "create",
         "--release-name", release_name,
-        "--image", f"localhost:32000/aipod-{service}",
-        "--image-tag", "latest",
+        "--image", f"localhost:32000/agentop-tool",
+        "--image-tag", docker_environment,
         "--command", SERVICE_COMMAND[service],
-        "--volumes", SERVICE_VOLUMES[service],
-        "--port", "8000",
+        "--port", "80",
         "--cpu-requests", config["cpu_requests"],
         "--cpu-limits", config["cpu_limits"],
         "--memory-requests", config["memory_requests"],
         "--memory-limits", config["memory_limits"],
-        "--physical-gpu", config["physical_gpu"],
-        "--gpu-memory", config["gpu_memory"],
-        "--username", username,
-        "--password", password,
-        "--ttl", ttl
+        "--ttl", ttl,
+        "--server-path", f"{SERVER_PATH[service]}*"
     ]
     return f"Server creation initiated:\n{execute_command(command)}"
 
 def list_servers_raw() -> List[str]:
-    output = execute_command(["aipod.sh", "list"])
+    output = execute_command(["agentop.sh", "list"])
     lines = output.strip().splitlines()
     return lines if len(lines) > 1 else []
 
@@ -74,13 +84,13 @@ def get_release_names() -> List[str]:
     lines = list_servers_raw()
     return [line.split()[0] for line in lines]
 
-def restart_server(release_name: str) -> str:                                                                                 return execute_command(["aipod.sh", "restart", "--release-name", release_name]) if release_name else "Please select a release."
+def restart_server(release_name: str) -> str:                                                                                 return execute_command(["agentop.sh", "restart", "--release-name", release_name]) if release_name else "Please select a release."
 
 def delete_server(release_name: str) -> str:
-    return execute_command(["aipod.sh", "delete", "--release-name", release_name]) if release_name else "Please select a release."
+    return execute_command(["agentop.sh", "delete", "--release-name", release_name]) if release_name else "Please select a release."
 
 def check_status(release_name: str) -> str:
-    return execute_command(["aipod.sh", "stat", "--release-name", release_name]) if release_name else "Please select a release."
+    return execute_command(["agentop.sh", "stat", "--release-name", release_name]) if release_name else "Please select a release."
 
 with gr.Blocks(title="AI Pod Manager") as app:
     gr.Markdown("# AI Pod Manager")
@@ -88,13 +98,14 @@ with gr.Blocks(title="AI Pod Manager") as app:
     with gr.Tab("Create Server"):
         with gr.Row():
             name = gr.Textbox(label="Release Name")
-            service = gr.Dropdown(choices=list(SERVICE_VOLUMES.keys()), label="Service Type", value="diffusion-pipe")
+            service = gr.Dropdown(choices=list(SERVICE_COMMAND.keys()), label="Service Type", value="http")
         with gr.Row():
             size = gr.Dropdown(choices=list(SERVER_MAPPINGS.keys()), label="Server Size", value=list(SERVER_MAPPINGS.keys())[2])
             ttl = gr.Dropdown(choices=TTL_LIST, label="Time to Live", value="8h")
         with gr.Row():
-            username = gr.Textbox(label="Username", value="default")
-            password = gr.Textbox(label="Password", value="default", type="password")
+            docker_environment = gr.Dropdown(choices=DOCKER_IMAGES, label="Docker Environment", value="fastapi")
+        with gr.Row():
+            code = gr.Code(language="python")
 
         create_btn = gr.Button("Create Server")
         create_output = gr.HTML(label="Creation Status")
@@ -114,7 +125,7 @@ with gr.Blocks(title="AI Pod Manager") as app:
 
         create_btn.click(
             fn=lambda *args: format_create_output(create_server(*args)),
-            inputs=[name, service, size, ttl, username, password],
+            inputs=[name, service, size, ttl, docker_environment, code],
             outputs=create_output
         )
 
@@ -176,8 +187,8 @@ with gr.Blocks(title="AI Pod Manager") as app:
                 remain = parts[9]
 
                 url_html = f'<a href="http://{url}" target="_blank">🔗</a>' if url else ""
-                restart_btn = '<button style="color:orange" onclick="fetch(\'https://skynetwork-gputest.vshosting.cz/gradio_api/call/restart-server\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({data:[\'' + name + '\']})}).then(res => res.json()).then(res => document.querySelector(\'#refresh-btn\').click())">Restart</button>'
-                delete_btn = '<button style="color:red" onclick="fetch(\'https://skynetwork-gputest.vshosting.cz/gradio_api/call/delete-server\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({data:[\'' + name + '\']})}).then(res => res.json()).then(res => document.querySelector(\'#refresh-btn\').click())">Delete</button>'
+                restart_btn = '<button style="color:orange" onclick="fetch(\'gradio_api/call/restart-server\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({data:[\'' + name + '\']})}).then(res => res.json()).then(res => document.querySelector(\'#refresh-btn\').click())">Restart</button>'
+                delete_btn = '<button style="color:red" onclick="fetch(\'gradio_api/call/delete-server\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({data:[\'' + name + '\']})}).then(res => res.json()).then(res => document.querySelector(\'#refresh-btn\').click())">Delete</button>'
 
                 html += f"""
                 <tr>
@@ -204,6 +215,7 @@ with gr.Blocks(title="AI Pod Manager") as app:
 
     gr.api(delete_server, api_name="delete-server")
     gr.api(restart_server, api_name="restart-server")
+
 
 if __name__ == "__main__":
     app.launch(server_name="0.0.0.0", server_port=8000)

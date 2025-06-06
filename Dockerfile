@@ -8,6 +8,6 @@ RUN venv/bin/pip install gradio
 
 WORKDIR /workspace
 
-COPY --chmod=755 . .
+COPY . .
 
 ENTRYPOINT ["/venv/bin/python", "gradio-ui.py"]
